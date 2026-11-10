@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Acta</string>
+    <key>CFBundleDisplayName</key>
+    <string>Acta</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.santi.acta</string>
+    <key>CFBundleExecutable</key>
+    <string>Acta</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>26.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Acta usa el micrófono para transcribir tu voz en las reuniones. El audio no se guarda.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Acta capta el audio de la llamada para transcribir a la otra parte. El audio no se guarda.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Acta transcribe la reunión en tu Mac para generar notas.</string>
+</dict>
+</plist>
