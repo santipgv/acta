@@ -15,6 +15,14 @@ enum SummaryEngine: String, CaseIterable, Identifiable {
         }
     }
 
+    var menuLabel: String {
+        switch self {
+        case .apple: "Apple (local)"
+        case .claudeAPI: "Claude (API)"
+        case .claudeCode: "Claude (suscripción)"
+        }
+    }
+
     var shortLabel: String {
         switch self {
         case .apple: "Apple Intelligence"
@@ -35,6 +43,16 @@ enum AppSettings {
     static var openWhenDone: Bool { d.object(forKey: "openWhenDone") as? Bool ?? true }
     static var claudeModel: String { d.string(forKey: "claudeModel") ?? "claude-sonnet-5-5" }
     static var claudeCLIPath: String { d.string(forKey: "claudeCLIPath") ?? "" }
+    static var userName: String {
+        (d.string(forKey: "userName") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    /// Términos separados por comas o saltos de línea.
+    static var vocabulary: [String] {
+        (d.string(forKey: "vocabulary") ?? "")
+            .split(whereSeparator: { $0 == "," || $0 == "\n" })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
     static var outputFolder: URL {
         let raw = d.string(forKey: "outputFolder") ?? "~/Documents/Reuniones"
         return URL(fileURLWithPath: (raw as NSString).expandingTildeInPath, isDirectory: true)
@@ -83,6 +101,8 @@ struct SettingsView: View {
     @AppStorage("outputFolder") private var outputFolder = "~/Documents/Reuniones"
     @AppStorage("claudeModel") private var claudeModel = "claude-sonnet-5-5"
     @AppStorage("claudeCLIPath") private var claudeCLIPath = ""
+    @AppStorage("userName") private var userName = ""
+    @AppStorage("vocabulary") private var vocabulary = ""
     @State private var apiKey = Keychain.get("anthropic") ?? ""
 
     var body: some View {
@@ -100,6 +120,19 @@ struct SettingsView: View {
                     .disabled(!captureSystem)
                 Text("Si tu micro recoge a la otra parte, Acta lo detecta comparándolo con el audio de la llamada y no lo apunta como tuyo.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Contexto") {
+                TextField("Tu nombre (para \"Yo\" en el acta)", text: $userName)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Vocabulario: nombres, productos y siglas que se repiten")
+                    TextEditor(text: $vocabulary)
+                        .font(.body)
+                        .frame(height: 70)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.quaternary))
+                    Text("Separados por comas. Ejemplo: AIX, handhelds, B5, Linux, triggers. Ayuda a transcribir bien estos términos y a corregirlos en el acta.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
 
             Section("Notas") {

@@ -56,6 +56,14 @@ final class LiveTranscriber {
         }
         converter = BufferConverter(to: format)
 
+        // Vocabulario propio como pista para el reconocedor (AIX, handhelds, nombres de producto…)
+        let vocabulary = AppSettings.vocabulary
+        if !vocabulary.isEmpty {
+            let context = AnalysisContext()
+            context.contextualStrings[.general] = vocabulary
+            try? await analyzer.setContext(context)
+        }
+
         let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
         self.continuation = continuation
         self.analyzer = analyzer

@@ -31,6 +31,7 @@ Si descarga el modelo de transcripción en español, tarda un momento solo esa v
 4. La nota aparece en `~/Documents/Reuniones/` y se abre sola.
 
 ## Ajustes
+- **Tu nombre y vocabulario**: nombres, productos y siglas que se repiten. Mejoran la transcripción y el acta.
 - **Motor de notas**: Apple Intelligence (por defecto), Claude con API key o Claude con tu suscripción vía Claude Code.
 - Idioma, carpeta de salida, incluir o no la transcripción completa, captura del audio del sistema.
 
@@ -47,6 +48,6 @@ Después, en Ajustes elige "Claude con mi suscripción".
 | Micrófono ("Yo") | AVAudioEngine |
 | Audio de la llamada ("Ellos") | Core Audio Process Tap + dispositivo agregado privado |
 | Transcripción | SpeechAnalyzer / SpeechTranscriber (local, streaming) |
-| Sin auriculares | EchoFilter: descarta frases de "Yo" que repiten lo que dijo "Ellos" en esos segundos |
+| Sin auriculares | EchoFilter: quita de "Yo" los grupos de 4 palabras que "Ellos" dijo en los 30 s de alrededor |
 | Notas | FoundationModels (local, por bloques) o Claude |
 | Salida | Un único `.md`, escrito en vivo y reescrito al final |

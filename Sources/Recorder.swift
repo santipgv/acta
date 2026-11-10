@@ -21,6 +21,8 @@ final class Recorder: ObservableObject {
     private var sys: LiveTranscriber?
     private var writer: MarkdownWriter?
     private var startDate = Date()
+    private var engineForThis: SummaryEngine = .apple
+    private var userTitled = false
     private var timer: Timer?
 
     var elapsedString: String {
@@ -48,6 +50,8 @@ final class Recorder: ObservableObject {
 
             let locale = try await LiveTranscriber.prepare(locale: Locale(identifier: AppSettings.localeID))
             startDate = Date()
+            engineForThis = AppSettings.engine
+            userTitled = !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let writer = try MarkdownWriter(folder: AppSettings.outputFolder, title: title, date: startDate)
             self.writer = writer
 
@@ -121,22 +125,23 @@ final class Recorder: ObservableObject {
         }
 
         let duration = Date().timeIntervalSince(startDate)
-        let engine = AppSettings.engine
+        let engine = engineForThis
         var notes: String?
         var failure: String?
         do {
-            notes = try await Summarizer.notes(for: writer.transcript(), engine: engine)
+            notes = try await Summarizer.notes(for: writer.transcript(), engine: engine, userTitled: userTitled)
         } catch {
             failure = error.localizedDescription
         }
 
         do {
-            try writer.finalize(notes: notes,
-                                duration: duration,
-                                engineLabel: engine.shortLabel,
-                                includeTranscript: AppSettings.includeTranscript || notes == nil)
-            lastFile = writer.url
-            if AppSettings.openWhenDone { NSWorkspace.shared.open(writer.url) }
+            let saved = try writer.finalize(notes: notes,
+                                            duration: duration,
+                                            engineLabel: engine.shortLabel,
+                                            includeTranscript: AppSettings.includeTranscript || notes == nil,
+                                            userTitled: userTitled)
+            lastFile = saved
+            if AppSettings.openWhenDone { NSWorkspace.shared.open(saved) }
         } catch {
             failure = "No pude guardar el .md: \(error.localizedDescription)"
         }

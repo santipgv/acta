@@ -3,7 +3,8 @@ import Foundation
 /// Escribe la transcripción en el .md a medida que llega (si la app se cierra, no pierdes nada)
 /// y al final lo reescribe con las notas arriba y la transcripción ordenada abajo.
 final class MarkdownWriter: @unchecked Sendable {
-    let url: URL
+    private(set) var url: URL
+    private let folder: URL
     private let title: String
     private let date: Date
     private var segments: [Segment] = []
@@ -14,10 +15,8 @@ final class MarkdownWriter: @unchecked Sendable {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let t = clean.isEmpty ? "Reunión" : clean
-        let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd HHmm"
-        let safe = t.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
-        url = folder.appendingPathComponent("\(df.string(from: date)) \(safe).md")
+        self.folder = folder
+        url = Self.fileURL(folder: folder, title: t, date: date)
         self.title = t
         self.date = date
 
@@ -42,28 +41,57 @@ final class MarkdownWriter: @unchecked Sendable {
         return cleaned.sorted { $0.start < $1.start }.map(Self.line).joined()
     }
 
-    func finalize(notes: String?, duration: TimeInterval, engineLabel: String, includeTranscript: Bool) throws {
+    /// Escribe el acta final y devuelve dónde quedó (cambia el nombre si la IA propuso título).
+    @discardableResult
+    func finalize(notes: String?, duration: TimeInterval, engineLabel: String,
+                  includeTranscript: Bool, userTitled: Bool) throws -> URL {
         queue.sync {
             try? handle?.close()
             handle = nil
         }
+
+        // Si la IA devolvió "# Título" y tú no pusiste uno, lo uso como título y nombre de archivo.
+        var finalTitle = title
+        var body = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if body.hasPrefix("# ") {
+            let firstLine = body.prefix { $0 != "\n" }
+            let proposed = firstLine.dropFirst(2).trimmingCharacters(in: .whitespaces)
+            if !userTitled && !proposed.isEmpty { finalTitle = String(proposed) }
+            body = String(body.dropFirst(firstLine.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         let df = DateFormatter()
         df.locale = Locale(identifier: "es_ES")
         df.dateStyle = .medium
         df.timeStyle = .short
         let mins = max(1, Int((duration / 60).rounded()))
 
-        var md = "# \(title)\n\n"
+        var md = "# \(finalTitle)\n\n"
         md += "**Fecha:** \(df.string(from: date)) · **Duración:** \(mins) min · **Notas:** \(engineLabel)\n\n"
-        if let notes, !notes.isEmpty {
-            md += notes.trimmingCharacters(in: .whitespacesAndNewlines) + "\n\n"
-        } else {
+        if body.isEmpty {
             md += "> No pude generar el resumen. Tienes la transcripción completa abajo.\n\n"
+        } else {
+            md += body + "\n\n"
         }
         if includeTranscript {
             md += "---\n\n## Transcripción\n\n" + transcript()
         }
-        try md.write(to: url, atomically: true, encoding: .utf8)
+
+        let target = Self.fileURL(folder: folder, title: finalTitle, date: date)
+        try md.write(to: target, atomically: true, encoding: .utf8)
+        if target != url { try? FileManager.default.removeItem(at: url) }
+        url = target
+        return target
+    }
+
+    static func fileURL(folder: URL, title: String, date: Date) -> URL {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd HHmm"
+        let safe = title
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .prefix(80)
+        return folder.appendingPathComponent("\(df.string(from: date)) \(safe).md")
     }
 
     /// Si no se transcribió nada, borra el .md vacío para no dejar basura.

@@ -30,6 +30,7 @@ struct ActaApp: App {
 struct MenuView: View {
     @EnvironmentObject var r: Recorder
     @Environment(\.openWindow) private var openWindow
+    @AppStorage("engine") private var engine = SummaryEngine.apple.rawValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -39,6 +40,10 @@ struct MenuView: View {
             case .idle, .error:
                 TextField("Título de la reunión (opcional)", text: $r.title)
                     .textFieldStyle(.roundedBorder)
+                Picker("Notas con", selection: $engine) {
+                    ForEach(SummaryEngine.allCases) { Text($0.menuLabel).tag($0.rawValue) }
+                }
+                .pickerStyle(.menu)
                 Button {
                     r.toggle()
                 } label: {

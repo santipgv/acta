@@ -2,41 +2,98 @@ import Foundation
 import FoundationModels
 
 enum Summarizer {
-    static let instructions = """
-    Eres un asistente que redacta actas de reuniones de trabajo en español, claras y fáciles de escanear.
-    En la transcripción, "Yo" es el usuario y "Ellos" es la otra parte de la llamada.
-    No inventes nada que no aparezca en la transcripción. Si algo no está claro, dilo.
-    """
+    // MARK: - Prompt
 
-    static let format = """
-    Devuelve SOLO Markdown con estas secciones (omite una sección si no hay contenido):
-    ## Resumen
-    3 a 5 frases.
-    ## Puntos clave
-    Viñetas breves.
-    ## Decisiones
-    Viñetas.
-    ## Próximos pasos
-    Lista de tareas con el formato "- [ ] Responsable: tarea (fecha si se mencionó)".
-    ## Preguntas abiertas
-    Viñetas.
-    """
-
-    static func notes(for transcript: String, engine: SummaryEngine) async throws -> String {
-        switch engine {
-        case .apple: return try await apple(transcript)
-        case .claudeAPI: return try await claudeAPI(transcript)
-        case .claudeCode: return try await claudeCode(transcript)
+    static var instructions: String {
+        let name = AppSettings.userName.isEmpty ? "el usuario" : AppSettings.userName
+        let vocab = AppSettings.vocabulary
+        var text = """
+        Eres el asistente de \(name) y redactas actas de reuniones de trabajo en español: concretas, fiables y fáciles de escanear.
+        En la transcripción, "Yo" es \(name) y "Ellos" es todo lo que sonó por el altavoz (la otra parte y, a veces, compañeros de \(name)).
+        La transcripción es automática y tiene errores: corrige palabras mal reconocidas usando el contexto.
+        Reglas:
+        - No inventes nada. Si dudas de un dato o de quién dijo algo, añade "(por confirmar)".
+        - Una decisión solo es decisión si alguien la confirmó de forma explícita. Lo que quedó por valorar va a "Temas abiertos".
+        - Prefiere pocos puntos con datos concretos (nombres, sistemas, cifras, fechas) a muchos puntos genéricos.
+        - Escribe Markdown puro. Nunca HTML.
+        """
+        if !vocab.isEmpty {
+            text += "\nTérminos correctos que se usan en estas reuniones: " + vocab.joined(separator: ", ") + "."
         }
+        return text
+    }
+
+    static func format(userTitled: Bool) -> String {
+        let titleLine = userTitled ? "" : "# Título concreto de máximo 8 palabras sobre el tema principal\n"
+        return """
+        Devuelve el acta con exactamente esta estructura:
+
+        \(titleLine)**Participantes:** nombres que aparecen en la conversación, separados por comas
+        **Próxima reunión:** fecha, hora y objetivo si se acordó (si no, omite esta línea)
+
+        ## Resumen
+        2 a 4 frases: para qué era la reunión y a qué conclusión se llegó.
+
+        ## Decisiones
+        Solo lo confirmado de forma explícita. Si no hubo, escribe "- Ninguna en firme".
+
+        ## Próximos pasos
+        - [ ] **Responsable:** tarea (fecha si se dijo). Si no está claro quién lo hace, usa "**Por confirmar:**".
+
+        ## Temas abiertos
+        Como máximo 6 viñetas con lo que quedó pendiente de valorar o resolver.
+
+        ## Puntos clave
+        Como máximo 8 viñetas con datos concretos.
+
+        ## Comentarios internos
+        Solo si hay conversación interna sin la otra parte (por ejemplo, al final de la llamada). Si no, omite esta sección.
+        """
+    }
+
+    static func notes(for transcript: String, engine: SummaryEngine, userTitled: Bool) async throws -> String {
+        let fmt = format(userTitled: userTitled)
+        let raw: String
+        switch engine {
+        case .apple: raw = try await apple(transcript, format: fmt)
+        case .claudeAPI: raw = try await claudeAPI(transcript, format: fmt)
+        case .claudeCode: raw = try await claudeCode(transcript, format: fmt)
+        }
+        return cleanMarkdown(raw)
+    }
+
+    /// Si el modelo devuelve HTML o bloques de código, lo paso a Markdown limpio.
+    static func cleanMarkdown(_ s: String) -> String {
+        var t = s
+        let rules: [(String, String)] = [
+            ("^\\s*```(?:markdown|md)?\\s*\\n", ""),
+            ("\\n```\\s*$", ""),
+            ("(?i)</?(ul|ol)>", "\n"),
+            ("(?i)<li>\\s*", "- "),
+            ("(?i)</li>", "\n"),
+            ("(?i)<br\\s*/?>", "\n"),
+            ("(?i)</?(strong|b)>", "**"),
+            ("(?i)</?(em|i)>", "_"),
+            ("(?i)<h1>", "\n# "),
+            ("(?i)<h2>", "\n## "),
+            ("(?i)<h3>", "\n### "),
+            ("(?i)</h[1-6]>", "\n"),
+            ("(?i)</?p>", "\n"),
+            ("\n[ \t]*\n([ \t]*\n)+", "\n\n"),
+        ]
+        for (pattern, replacement) in rules {
+            t = t.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+        }
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Apple Intelligence (local)
     // El modelo local tiene una ventana de contexto pequeña (unos 4K tokens),
     // así que las reuniones largas van por bloques y luego se unen.
 
-    private static let chunkChars = 5000
+    private static let chunkChars = 4000
 
-    static func apple(_ transcript: String) async throws -> String {
+    static func apple(_ transcript: String, format: String) async throws -> String {
         let model = SystemLanguageModel.default
         guard case .available = model.availability else { throw ActaError.appleUnavailable }
 
@@ -57,8 +114,9 @@ enum Summarizer {
         var out: [String] = []
         for (i, part) in parts.enumerated() {
             let prompt = """
-            Este es el \(label) (\(i + 1) de \(parts.count)). Extrae en viñetas muy breves: \
-            temas tratados, decisiones, tareas con responsable y preguntas abiertas.
+            Este es el \(label) (\(i + 1) de \(parts.count)). Extrae en viñetas muy breves y fieles: \
+            quién participa, qué se explicó (sistemas, nombres, cifras), decisiones confirmadas, \
+            compromisos con su responsable, temas pendientes y fechas. No interpretes ni añadas nada.
 
             \(part)
             """
@@ -88,7 +146,7 @@ enum Summarizer {
 
     // MARK: - Claude por API key
 
-    static func claudeAPI(_ transcript: String) async throws -> String {
+    static func claudeAPI(_ transcript: String, format: String) async throws -> String {
         guard let key = Keychain.get("anthropic"), !key.isEmpty else { throw ActaError.missingAPIKey }
 
         var req = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!)
@@ -123,7 +181,7 @@ enum Summarizer {
 
     // MARK: - Claude con tu suscripción (vía Claude Code instalado en el Mac)
 
-    static func claudeCode(_ transcript: String) async throws -> String {
+    static func claudeCode(_ transcript: String, format: String) async throws -> String {
         let path = try claudePath()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
